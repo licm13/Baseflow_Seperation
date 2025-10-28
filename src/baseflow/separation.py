@@ -1,11 +1,17 @@
+"""High-level APIs for running baseflow separation workflows."""
+
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from pathlib import Path
-from baseflow.methods import *
-from baseflow.comparision import strict_baseflow, KGE
-from baseflow.utils import clean_streamflow, exist_ice, geo2imagexy, format_method
-from baseflow.param_estimate import recession_coefficient, param_calibrate
+
+from .comparision import KGE, strict_baseflow
+from .methods import *  # noqa: F401,F403 - re-export algorithm implementations
+from .param_estimate import param_calibrate, recession_coefficient
+from .utils import clean_streamflow, exist_ice, format_method, geo2imagexy
+
+__all__ = ["single", "separation"]
 
 
 def single(series, area=None, ice=None, method="all", return_kge=True):
