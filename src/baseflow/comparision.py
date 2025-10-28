@@ -1,4 +1,10 @@
+"""Evaluation utilities for comparing baseflow separation results."""
+
+from __future__ import annotations
+
 import numpy as np
+
+__all__ = ["strict_baseflow", "KGE"]
 
 
 def strict_baseflow(Q, ice=None):

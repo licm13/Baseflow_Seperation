@@ -1,5 +1,16 @@
+"""Utility helpers for data cleaning, masking and numerical routines."""
+
 import numpy as np
 from numba import njit
+
+__all__ = [
+    "clean_streamflow",
+    "exist_ice",
+    "moving_average",
+    "multi_arange",
+    "geo2imagexy",
+    "format_method",
+]
 
 
 def clean_streamflow(series):
