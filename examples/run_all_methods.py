@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
+
+# Add the parent directory to the Python path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
-
 import baseflow
 
 OUTPUT_DIR = Path("./data/example_outputs")
