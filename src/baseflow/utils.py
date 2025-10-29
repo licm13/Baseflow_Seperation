@@ -22,6 +22,9 @@ __all__ = [
     "multi_arange",
     "geo2imagexy",
     "format_method",
+    "validate_streamflow",
+    "calculate_bfi",
+    "get_flow_statistics",
 ]
 
 
@@ -252,3 +255,169 @@ def format_method(method: Union[str, List[str]]) -> List[str]:
     elif isinstance(method, str):
         method = [method]
     return method
+
+
+def validate_streamflow(
+    series: pd.Series,
+    min_length: int = 365,
+    max_gap_days: int = 30
+) -> Tuple[bool, List[str]]:
+    """Validate streamflow data quality and completeness.
+
+    Checks for common data quality issues that may affect baseflow separation.
+
+    Args:
+        series: Streamflow time series
+        min_length: Minimum required length in days
+        max_gap_days: Maximum allowed gap between consecutive observations
+
+    Returns:
+        Tuple of (is_valid, list_of_issues)
+
+    Example:
+        >>> is_valid, issues = validate_streamflow(flow_series)
+        >>> if not is_valid:
+        ...     print("Data issues:", issues)
+
+    Note:
+        - Returns (True, []) for valid data
+        - Returns (False, [issue1, issue2, ...]) for invalid data
+    """
+    issues = []
+
+    # Check length
+    if len(series) < min_length:
+        issues.append(f"Time series too short: {len(series)} days (minimum: {min_length})")
+
+    # Check for missing values
+    n_missing = series.isna().sum()
+    if n_missing > 0:
+        pct_missing = n_missing / len(series) * 100
+        issues.append(f"Missing values: {n_missing} ({pct_missing:.1f}%)")
+
+    # Check for negative values
+    if (series < 0).any():
+        n_negative = (series < 0).sum()
+        issues.append(f"Negative values: {n_negative} (will be converted to absolute)")
+
+    # Check for zero/very low flow dominance
+    n_zero = (series == 0).sum()
+    if n_zero > len(series) * 0.3:
+        issues.append(f"Warning: {n_zero} zero values ({n_zero/len(series)*100:.1f}%)")
+
+    # Check for unrealistic values (very large spikes)
+    if len(series) > 0 and series.max() > 0:
+        ratio = series.max() / series.median()
+        if ratio > 100:
+            issues.append(f"Warning: Large flow range (max/median = {ratio:.1f})")
+
+    # Check for time gaps (if DatetimeIndex)
+    if isinstance(series.index, pd.DatetimeIndex):
+        time_diffs = series.index.to_series().diff()[1:]
+        max_gap = time_diffs.max()
+        if max_gap > pd.Timedelta(days=max_gap_days):
+            issues.append(f"Large time gap: {max_gap.days} days (max allowed: {max_gap_days})")
+
+    is_valid = len(issues) == 0
+    return is_valid, issues
+
+
+def calculate_bfi(
+    streamflow: npt.NDArray[np.float64],
+    baseflow: npt.NDArray[np.float64]
+) -> float:
+    """Calculate Baseflow Index (BFI).
+
+    BFI is the ratio of baseflow volume to total streamflow volume.
+
+    Args:
+        streamflow: Total streamflow array
+        baseflow: Baseflow array
+
+    Returns:
+        BFI value (0 to 1)
+
+    Example:
+        >>> bfi = calculate_bfi(Q, baseflow)
+        >>> print(f"Baseflow Index: {bfi:.3f}")
+
+    Note:
+        - BFI = sum(baseflow) / sum(streamflow)
+        - Returns 0 if total flow is zero
+        - Typical ranges: 0.3-0.5 (flashy), 0.5-0.8 (perennial)
+    """
+    total_flow = np.sum(np.abs(streamflow))
+    if total_flow == 0:
+        return 0.0
+    return np.sum(baseflow) / total_flow
+
+
+def get_flow_statistics(
+    streamflow: Union[pd.Series, npt.NDArray[np.float64]]
+) -> dict:
+    """Calculate comprehensive streamflow statistics.
+
+    Computes descriptive statistics useful for characterizing flow regime.
+
+    Args:
+        streamflow: Streamflow time series or array
+
+    Returns:
+        Dictionary with statistics:
+            - mean, median, std, min, max
+            - percentiles (p10, p25, p75, p90)
+            - cv (coefficient of variation)
+            - n_days (length)
+
+    Example:
+        >>> stats = get_flow_statistics(flow_series)
+        >>> print(f"Mean: {stats['mean']:.2f} m³/s")
+        >>> print(f"CV: {stats['cv']:.2f}")
+
+    Note:
+        - Useful for quality control and regime classification
+        - CV > 1.0 indicates highly variable flow
+    """
+    if isinstance(streamflow, pd.Series):
+        Q = streamflow.values
+    else:
+        Q = streamflow
+
+    # Remove NaN and infinite values
+    Q = Q[np.isfinite(Q)]
+
+    if len(Q) == 0:
+        return {
+            'n_days': 0,
+            'mean': np.nan,
+            'median': np.nan,
+            'std': np.nan,
+            'min': np.nan,
+            'max': np.nan,
+            'cv': np.nan,
+            'p10': np.nan,
+            'p25': np.nan,
+            'p75': np.nan,
+            'p90': np.nan,
+        }
+
+    stats = {
+        'n_days': len(Q),
+        'mean': np.mean(Q),
+        'median': np.median(Q),
+        'std': np.std(Q),
+        'min': np.min(Q),
+        'max': np.max(Q),
+        'p10': np.percentile(Q, 10),
+        'p25': np.percentile(Q, 25),
+        'p75': np.percentile(Q, 75),
+        'p90': np.percentile(Q, 90),
+    }
+
+    # Coefficient of variation
+    if stats['mean'] > 0:
+        stats['cv'] = stats['std'] / stats['mean']
+    else:
+        stats['cv'] = np.nan
+
+    return stats
