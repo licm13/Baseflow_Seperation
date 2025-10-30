@@ -6,14 +6,15 @@
 
 from __future__ import annotations
 
-import argparse
+import sys
 from pathlib import Path
-from typing import Iterable, List, Sequence
 
-import pandas as pd
-from tqdm import tqdm
+# Prefer repo/src over site-packages
+repo_root = Path(__file__).resolve().parents[2]
+src_dir = repo_root / "src"
+sys.path.insert(0, str(src_dir if (src_dir / "baseflow").exists() else repo_root))
 
-from .common import (
+from scripts.batch.common import (
     BatchConfig,
     DEFAULT_METHODS,
     iter_input_files,

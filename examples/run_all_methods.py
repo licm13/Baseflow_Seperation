@@ -5,8 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
-# Add the parent directory to the Python path
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+# Prefer repo/src over site-packages
+repo_root = Path(__file__).resolve().parents[1]
+src_dir = repo_root / "src"
+sys.path.insert(0, str(src_dir if (src_dir / "baseflow").exists() else repo_root))
 
 import pandas as pd
 import baseflow
