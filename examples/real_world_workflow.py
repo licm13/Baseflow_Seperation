@@ -20,9 +20,39 @@ from datetime import datetime
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import numpy as np
 import pandas as pd
 import yaml
+
+# 配置matplotlib中文字体
+def configure_chinese_font():
+    """配置matplotlib中文字体显示"""
+    # 尝试多种中文字体，按优先级排序
+    chinese_fonts = [
+        'SimHei',           # Windows 黑体
+        'Microsoft YaHei',  # Windows 微软雅黑
+        'SimSun',           # Windows 宋体
+        'PingFang SC',      # macOS 苹方
+        'Hiragino Sans GB', # macOS 冬青黑体
+        'WenQuanYi Micro Hei', # Linux 文泉驿微米黑
+        'Noto Sans CJK SC', # Linux Noto字体
+        'DejaVu Sans',      # 通用fallback
+        'Arial Unicode MS', # 通用fallback
+        'sans-serif'        # 最终fallback
+    ]
+    
+    plt.rcParams['font.sans-serif'] = chinese_fonts
+    plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+    
+    # 设置默认字体大小
+    plt.rcParams['font.size'] = 10
+    plt.rcParams['axes.titlesize'] = 14
+    plt.rcParams['axes.labelsize'] = 12
+    plt.rcParams['legend.fontsize'] = 10
+
+# 配置中文字体
+configure_chinese_font()
 
 # 添加 src 到路径(用于开发模式)
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -381,7 +411,7 @@ def generate_plots(dfs: dict, df_flow: pd.DataFrame, df_bfi: pd.DataFrame,
         ax1.set_xticks(range(len(df_kge.index)))
         ax1.set_xticklabels(df_kge.index, rotation=45, ha='right')
         ax1.set_yticks(range(len(df_kge.columns)))
-        ax1.set_yticks(df_kge.columns)
+        ax1.set_yticklabels(df_kge.columns)
         ax1.set_xlabel('站点', fontsize=12)
         ax1.set_ylabel('方法', fontsize=12)
         ax1.set_title('KGE 热力图', fontsize=14, fontweight='bold')
