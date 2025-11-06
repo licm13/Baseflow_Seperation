@@ -2,7 +2,7 @@
 
 This module integrates the methodology described in "Global runoff partitioning
 based on Budyko-constrained machine learning" (Cheng et al., 2023) into the
-``baseflow_seperation`` library architecture.  The implementation follows the
+``baseflow_separation`` library architecture.  The implementation follows the
 library's object-oriented interface so the method can be discovered through the
 global registry alongside the traditional digital-filter approaches.
 
