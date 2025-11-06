@@ -56,12 +56,41 @@ def recession_coefficient(
     """
     # Calculate flow and derivative at center points
     cQ, dQ = Q[1:-1], (Q[2:] - Q[:-2]) / 2
-    cQ, dQ = cQ[strict[1:-1]], dQ[strict[1:-1]]
+    mask = strict[1:-1]
+    if not np.any(mask):
+        mask = np.ones_like(mask, dtype=bool)
 
-    # Select 5th percentile of recession slopes
-    idx = np.argsort(-dQ / cQ)[np.floor(dQ.shape[0] * 0.05).astype(int)]
+    cQ, dQ = cQ[mask], dQ[mask]
+
+    if cQ.size == 0 or dQ.size == 0:
+        return 0.95
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratios = np.divide(-dQ, cQ, out=np.full_like(dQ, np.nan), where=cQ != 0)
+
+    finite = np.isfinite(ratios)
+    if not np.any(finite):
+        return 0.95
+
+    ratios = ratios[finite]
+    cQ = cQ[finite]
+    dQ = dQ[finite]
+
+    # Use np.percentile for robust 5th percentile calculation
+    if ratios.size < 10:
+        return 0.95
+    perc5 = np.percentile(ratios, 5)
+    # Find the index of the value closest to the 5th percentile
+    idx = np.argmin(np.abs(ratios - perc5))
     K = -cQ[idx] / dQ[idx]
-    return np.exp(-1 / K)
+    if not np.isfinite(K) or K == 0:
+        return 0.95
+
+    a_value = float(np.exp(-1 / K))
+    if not np.isfinite(a_value):
+        return 0.95
+
+    return float(np.clip(a_value, 0.5, 0.995))
 
 
 def param_calibrate(
@@ -97,7 +126,21 @@ def param_calibrate(
     idx_rec = recession_period(Q)
     idx_oth = np.full(Q.shape[0], True)
     idx_oth[idx_rec] = False
-    return param_calibrate_jit(param_range, method, Q, b_LH, a, idx_rec, idx_oth)
+
+    Q_sum = float(np.sum(Q))
+    bfi_target = float(np.sum(b_LH) / (Q_sum + 1e-10))
+
+    return param_calibrate_jit(
+        param_range,
+        method,
+        Q,
+        b_LH,
+        a,
+        idx_rec,
+        idx_oth,
+        bfi_target,
+        Q_sum,
+    )
 
 
 @njit(parallel=True)
@@ -108,7 +151,9 @@ def param_calibrate_jit(
     b_LH: npt.NDArray[np.float64],
     a: float,
     idx_rec: npt.NDArray[np.int64],
-    idx_oth: npt.NDArray[np.bool_]
+    idx_oth: npt.NDArray[np.bool_],
+    bfi_target: float,
+    Q_sum: float,
 ) -> float:
     """Numba-accelerated parameter calibration with parallel grid search.
 
@@ -141,7 +186,8 @@ def param_calibrate_jit(
     for i in prange(param_range.shape[0]):
         p = param_range[i]
         b_exceed = method(Q, b_LH, a, p, return_exceed=True)
-        f_exd, logb = b_exceed[-1] / Q.shape[0], np.log1p(b_exceed[:-1])
+        baseflow = b_exceed[:-1]
+        f_exd, logb = b_exceed[-1] / Q.shape[0], np.log1p(baseflow)
 
         # NSE for recession part (log-transformed)
         Q_obs, Q_sim = logQ[idx_rec], logb[idx_rec]
@@ -155,8 +201,10 @@ def param_calibrate_jit(
         SS_tot = np.sum(np.square(Q_obs - np.mean(Q_obs)))
         NSE_oth = (1 - SS_res / (SS_tot + 1e-10)) - 1e-10
 
-        # Composite loss: balance recession fit, overall fit, and physical constraints
-        loss[i] = 1 - (1 - (1 - NSE_rec) / (1 - NSE_oth)) * (1 - f_exd)
+        # Composite loss: balance recession fit, overall fit, physical constraints, and BFI realism
+        bfi_candidate = np.sum(baseflow) / (Q_sum + 1e-10)
+        bfi_penalty = np.abs(bfi_candidate - bfi_target)
+        loss[i] = 1 - (1 - (1 - NSE_rec) / (1 - NSE_oth)) * (1 - f_exd) + bfi_penalty
 
     return param_range[np.argmin(loss)]
 

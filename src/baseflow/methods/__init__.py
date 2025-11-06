@@ -62,6 +62,7 @@ from ._wrappers import (
     UKIHMethod,
     WillemsMethod,
 )
+from .ChengBudykoML import ChengBudykoML
 
 __all__ = [
     # 原有 Numba 函数(向后兼容)
@@ -96,4 +97,5 @@ __all__ = [
     "SlideMethod",
     "UKIHMethod",
     "WillemsMethod",
+    "ChengBudykoML",
 ]
