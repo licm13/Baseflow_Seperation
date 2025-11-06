@@ -76,7 +76,12 @@ def recession_coefficient(
     cQ = cQ[finite]
     dQ = dQ[finite]
 
-    idx = np.argsort(ratios)[np.floor(ratios.shape[0] * 0.05).astype(int)]
+    # Use np.percentile for robust 5th percentile calculation
+    if ratios.size < 10:
+        return 0.95
+    perc5 = np.percentile(ratios, 5)
+    # Find the index of the value closest to the 5th percentile
+    idx = np.argmin(np.abs(ratios - perc5))
     K = -cQ[idx] / dQ[idx]
     if not np.isfinite(K) or K == 0:
         return 0.95
