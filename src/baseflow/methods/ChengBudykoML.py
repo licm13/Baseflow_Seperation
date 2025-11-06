@@ -117,7 +117,6 @@ def _estimate_alpha_from_obs(
 
     with np.errstate(divide="ignore", invalid="ignore"):
         rfc_obs = np.divide(Q, P, out=np.zeros_like(Q), where=P != 0)
-        aridity_index = np.divide(Ep, P, out=np.zeros_like(Ep), where=P != 0)
 
     alpha = np.full_like(rfc_obs, 2.0, dtype=float)
 
