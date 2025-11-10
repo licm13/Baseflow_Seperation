@@ -12,9 +12,9 @@ from typing import Any, Optional
 
 import numpy as np
 import numpy.typing as npt
-from numba import njit
 
 from ._base import BaseflowMethod, register_method
+from .lh_core import lh_filter
 
 __all__ = ["LHMethod", "LH"]
 
@@ -74,16 +74,18 @@ class LHMethod(BaseflowMethod):
         beta = kwargs.get("beta", self.beta)
         return_exceed = kwargs.get("return_exceed", False)
 
-        return LH(Q, beta=beta, return_exceed=return_exceed)
+        # Delegate to centralized lh_filter implementation
+        return lh_filter(Q, beta=beta, return_exceed=return_exceed)
 
 
 # ============================================================================
-# 原始 Numba JIT 编译函数(保持向后兼容)
+# 向后兼容的包装函数 - 委托给 lh_core.lh_filter
 # ============================================================================
 
-@njit
 def LH(Q: npt.NDArray[np.float64], beta: float = 0.925, return_exceed: bool = False) -> npt.NDArray[np.float64]:
-    """LH 数字滤波器的 Numba 加速实现。
+    """LH 数字滤波器 - 委托给集中式实现。
+
+    此函数保持向后兼容性,内部委托给 lh_core.lh_filter。
 
     使用两遍滤波策略:
     1. 正向遍历: 计算初步基流
@@ -99,43 +101,7 @@ def LH(Q: npt.NDArray[np.float64], beta: float = 0.925, return_exceed: bool = Fa
         如果 return_exceed=True: 基流数组(末尾附加超限次数)
 
     Note:
-        - Numba JIT 编译确保性能与原始实现相同
+        - 使用 Numba JIT 编译(如可用)确保性能
         - 物理约束: b[i] ≤ Q[i] (基流不能超过总流量)
     """
-    # 初始化结果数组
-    if return_exceed:
-        b = np.zeros(Q.shape[0] + 1)  # 最后一个元素存储超限次数
-    else:
-        b = np.zeros(Q.shape[0])
-
-    # ========================================================================
-    # 第一遍: 正向滤波
-    # ========================================================================
-    b[0] = Q[0]  # 初始值: 假设初始基流等于初始流量
-
-    for i in range(Q.shape[0] - 1):
-        # LH 递归公式: 当前基流 = β * 前一时刻基流 + (1-β)/2 * (当前流量 + 前一时刻流量)
-        b[i + 1] = beta * b[i] + (1 - beta) / 2 * (Q[i] + Q[i + 1])
-
-        # 物理约束: 基流不能超过总流量
-        if b[i + 1] > Q[i + 1]:
-            b[i + 1] = Q[i + 1]
-            if return_exceed:
-                b[-1] += 1  # 记录超限次数(用于标定评估)
-
-    # ========================================================================
-    # 第二遍: 反向滤波(在第一遍结果上操作)
-    # ========================================================================
-    b1 = np.copy(b)  # 保存第一遍结果
-
-    for i in range(Q.shape[0] - 2, -1, -1):  # 从倒数第二个元素开始反向遍历
-        # 反向递归公式: 与正向类似,但方向相反
-        b[i] = beta * b[i + 1] + (1 - beta) / 2 * (b1[i + 1] + b1[i])
-
-        # 物理约束: 反向滤波的基流也不能超过第一遍的结果
-        if b[i] > b1[i]:
-            b[i] = b1[i]
-            if return_exceed:
-                b[-1] += 1
-
-    return b
+    return lh_filter(Q, beta=beta, return_exceed=return_exceed)

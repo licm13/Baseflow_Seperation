@@ -29,7 +29,9 @@ from .methods import (
     UKIH,
     Willems,
 )
+from .methods.lh_core import lh_filter
 from .param_estimate import param_calibrate, recession_coefficient
+from .separation_core import compute_baseline_lh_for_df
 from .utils import clean_streamflow, exist_ice, format_method, geo2imagexy
 
 __all__ = ["single", "separation"]
@@ -94,8 +96,8 @@ def single(
     if any(m in ["Chapman", "CM", "Boughton", "Furey", "Eckhardt", "Willems"] for m in method):
         a = recession_coefficient(Q, strict)
 
-    # Compute baseline LH filter (used by many methods)
-    b_LH = LH(Q)
+    # Compute baseline LH filter (used by many methods) using centralized implementation
+    b_LH = compute_baseline_lh_for_df(Q)
 
     # Initialize results DataFrame
     b = pd.DataFrame(np.nan, index=date, columns=method)
