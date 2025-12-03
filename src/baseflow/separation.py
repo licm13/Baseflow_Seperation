@@ -261,7 +261,7 @@ def separation(
                 bfi_values = b.sum() / df.loc[b.index, s].abs().sum()
 
             return (s, b, bfi_values, KGEs)
-        except BaseException as e:
+        except Exception as e:
             print(f"\nFailed to separate baseflow for station {s}: {e}")
             return (s, None, None, None)
 
