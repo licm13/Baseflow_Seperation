@@ -1,3 +1,6 @@
 numpy
 numba
 pandas
+tqdm
+joblib
+scikit-learn

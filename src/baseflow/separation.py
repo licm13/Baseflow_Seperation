@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+from joblib import Parallel, delayed
 from tqdm import tqdm
 
 from .comparision import KGE, strict_baseflow
@@ -167,6 +168,7 @@ def separation(
     method: Union[str, List[str]] = "all",
     return_bfi: bool = False,
     return_kge: bool = False,
+    n_jobs: int = -1,
 ) -> Union[
     Dict[str, pd.DataFrame],
     Tuple[Dict[str, pd.DataFrame], pd.DataFrame],
@@ -188,6 +190,8 @@ def separation(
         method: Method name(s) to apply (see `single()` for options)
         return_bfi: Whether to calculate Baseflow Index (BFI) for each station
         return_kge: Whether to calculate KGE scores for each station
+        n_jobs: Number of parallel jobs to run. -1 means using all processors.
+            Default is -1 (all cores). Set to 1 for sequential processing.
 
     Returns:
         Depending on flags, returns:
@@ -212,13 +216,14 @@ def separation(
         ...     'lat': [45.2, 44.8, 46.1]
         ... }, index=stations)
         >>>
-        >>> # Run separation
+        >>> # Run separation with parallel processing
         >>> results, bfi, kge = separation(
         ...     flow_data,
         ...     df_sta=station_info,
         ...     method=["LH", "Eckhardt"],
         ...     return_bfi=True,
-        ...     return_kge=True
+        ...     return_kge=True,
+        ...     n_jobs=-1  # Use all available cores
         ... )
         >>> print(f"Methods applied: {list(results.keys())}")
         >>> print(f"BFI summary:\\n{bfi}")
@@ -228,9 +233,11 @@ def separation(
         - Progress is displayed via tqdm progress bar
         - Stations that fail processing will print an error message and be skipped
         - Frozen period detection uses global permafrost data (included in package)
+        - Parallel processing uses joblib for efficient multi-core computation
     """
     # Internal worker function for processing a single station
-    def sep_work(s: str) -> None:
+    # Returns results instead of writing to shared DataFrames for thread-safety
+    def sep_work(s: str) -> Tuple[str, Optional[pd.DataFrame], Optional[pd.Series], Optional[pd.Series]]:
         try:
             # read area, longitude, latitude from df_sta
             area, ice = None, None
@@ -247,16 +254,16 @@ def separation(
                 ice = ([11, 1], [3, 31]) if ice.all() else ice
             # separate baseflow for station S
             b, KGEs = single(df[s], ice=ice, area=area, method=method, return_kge=return_kge)
-            # write into already created dataframe
-            for m in method:
-                dfs[m].loc[b.index, s] = b[m]
+
+            # Calculate BFI if requested
+            bfi_values = None
             if return_bfi:
-                df_bfi.loc[s] = b.sum() / df.loc[b.index, s].abs().sum()
-            if return_kge:
-                df_kge.loc[s] = KGEs
-        except BaseException:
-            print("\nFailed to separate baseflow for station {sta}".format(sta=s))
-            pass
+                bfi_values = b.sum() / df.loc[b.index, s].abs().sum()
+
+            return (s, b, bfi_values, KGEs)
+        except Exception as e:
+            print(f"\nFailed to separate baseflow for station {s}: {e}")
+            return (s, None, None, None)
 
     # convert index to datetime
     if not isinstance(df.index, pd.DatetimeIndex):
@@ -276,9 +283,26 @@ def separation(
     if return_kge:
         df_kge = pd.DataFrame(np.nan, index=df.columns, columns=method, dtype=float)
 
-    # run separation for each column
-    for s in tqdm(df.columns, total=df.shape[1]):
-        sep_work(s)
+    # Run separation for each station in parallel
+    # Use Parallel with delayed to process stations concurrently
+    results = Parallel(n_jobs=n_jobs, backend='loky')(
+        delayed(sep_work)(s) for s in tqdm(df.columns, total=df.shape[1])
+    )
+
+    # Collect results from parallel processing
+    for station_id, baseflow_df, bfi_values, kge_values in results:
+        if baseflow_df is not None:
+            # Write baseflow results
+            for m in method:
+                dfs[m].loc[baseflow_df.index, station_id] = baseflow_df[m]
+
+            # Write BFI values
+            if return_bfi and bfi_values is not None:
+                df_bfi.loc[station_id] = bfi_values
+
+            # Write KGE values
+            if return_kge and kge_values is not None:
+                df_kge.loc[station_id] = kge_values
 
     # return result
     if return_bfi and return_kge:
